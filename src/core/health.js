@@ -5,6 +5,31 @@ import { getClient, getTargetInfo, evaluate } from '../connection.js';
 import { existsSync } from 'fs';
 import { execSync, spawn } from 'child_process';
 
+export function findWindowsMsixTradingViewPath() {
+  if (process.platform !== 'win32') return null;
+
+  const command = [
+    '$pkg = Get-AppxPackage -Name TradingView.Desktop -ErrorAction SilentlyContinue',
+    '| Sort-Object Version -Descending',
+    '| Select-Object -First 1;',
+    'if ($pkg) {',
+    "$exe = Join-Path $pkg.InstallLocation 'TradingView.exe';",
+    'if (Test-Path -LiteralPath $exe) { Write-Output $exe }',
+    '}',
+  ].join(' ');
+
+  try {
+    const found = execSync(`powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "${command}"`, { timeout: 5000 })
+      .toString()
+      .trim()
+      .split(/\r?\n/)
+      .find(Boolean);
+    return found && existsSync(found) ? found : null;
+  } catch {
+    return null;
+  }
+}
+
 export async function healthCheck() {
   await getClient();
   const target = await getTargetInfo();
@@ -190,6 +215,10 @@ export async function launch({ port, kill_existing } = {}) {
     if (p && existsSync(p)) { tvPath = p; break; }
   }
 
+  if (!tvPath && platform === 'win32') {
+    tvPath = findWindowsMsixTradingViewPath();
+  }
+
   if (!tvPath) {
     try {
       const cmd = platform === 'win32' ? 'where TradingView.exe' : 'which tradingview';
@@ -209,7 +238,10 @@ export async function launch({ port, kill_existing } = {}) {
   }
 
   if (!tvPath) {
-    throw new Error(`TradingView not found on ${platform}. Searched: ${candidates.join(', ')}. Launch manually with: /path/to/TradingView --remote-debugging-address=${cdpHost} --remote-debugging-port=${cdpPort}`);
+    const searched = platform === 'win32'
+      ? [...candidates, 'Windows Appx package TradingView.Desktop']
+      : candidates;
+    throw new Error(`TradingView not found on ${platform}. Searched: ${searched.join(', ')}. Launch manually with: /path/to/TradingView --remote-debugging-address=${cdpHost} --remote-debugging-port=${cdpPort}`);
   }
 
   if (killFirst) {
