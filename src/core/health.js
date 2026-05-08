@@ -160,7 +160,8 @@ export async function uiState() {
 }
 
 export async function launch({ port, kill_existing } = {}) {
-  const cdpPort = port || 9222;
+  const cdpHost = process.env.TV_CDP_HOST || '127.0.0.1';
+  const cdpPort = port || Number(process.env.TV_CDP_PORT || 9222);
   const killFirst = kill_existing !== false;
   const platform = process.platform;
 
@@ -208,7 +209,7 @@ export async function launch({ port, kill_existing } = {}) {
   }
 
   if (!tvPath) {
-    throw new Error(`TradingView not found on ${platform}. Searched: ${candidates.join(', ')}. Launch manually with: /path/to/TradingView --remote-debugging-port=${cdpPort}`);
+    throw new Error(`TradingView not found on ${platform}. Searched: ${candidates.join(', ')}. Launch manually with: /path/to/TradingView --remote-debugging-address=${cdpHost} --remote-debugging-port=${cdpPort}`);
   }
 
   if (killFirst) {
@@ -219,7 +220,7 @@ export async function launch({ port, kill_existing } = {}) {
     } catch { /* may not be running */ }
   }
 
-  const child = spawn(tvPath, [`--remote-debugging-port=${cdpPort}`], { detached: true, stdio: 'ignore' });
+  const child = spawn(tvPath, [`--remote-debugging-address=${cdpHost}`, `--remote-debugging-port=${cdpPort}`], { detached: true, stdio: 'ignore' });
   child.unref();
 
   for (let i = 0; i < 15; i++) {
@@ -227,7 +228,7 @@ export async function launch({ port, kill_existing } = {}) {
     try {
       const http = await import('http');
       const ready = await new Promise((resolve) => {
-        http.get(`http://localhost:${cdpPort}/json/version`, (res) => {
+        http.get(`http://${cdpHost}:${cdpPort}/json/version`, (res) => {
           let data = '';
           res.on('data', (chunk) => data += chunk);
           res.on('end', () => resolve(data));
@@ -237,7 +238,7 @@ export async function launch({ port, kill_existing } = {}) {
         const info = JSON.parse(ready);
         return {
           success: true, platform, binary: tvPath, pid: child.pid,
-          cdp_port: cdpPort, cdp_url: `http://localhost:${cdpPort}`,
+          cdp_host: cdpHost, cdp_port: cdpPort, cdp_url: `http://${cdpHost}:${cdpPort}`,
           browser: info.Browser, user_agent: info['User-Agent'],
         };
       }
@@ -245,7 +246,7 @@ export async function launch({ port, kill_existing } = {}) {
   }
 
   return {
-    success: true, platform, binary: tvPath, pid: child.pid, cdp_port: cdpPort, cdp_ready: false,
+    success: true, platform, binary: tvPath, pid: child.pid, cdp_host: cdpHost, cdp_port: cdpPort, cdp_ready: false,
     warning: 'TradingView launched but CDP not responding yet. It may still be loading. Try tv_health_check in a few seconds.',
   };
 }
